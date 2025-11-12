@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, RotateCcw } from 'lucide-react'
 
 interface GameState {
@@ -124,30 +124,28 @@ function GameInfo({ gameState, gameStatus }: { gameState: GameState | null; game
   )
 }
 
-function WinnerModal({ winner, onClose }: { winner: string; onClose: () => void }) {
+function WinnerModal({ winner, isOpen, onClose }: { winner: string; isOpen: boolean; onClose: () => void }) {
   const isPlayerWin = winner === 'X'
-  const title = isPlayerWin ? 'You Won!' : winner === 'O' ? 'AI Won!' : "It's a Draw!"
+  const isDraw = winner === 'none'
+  const title = isPlayerWin ? 'You Won!' : isPlayerWin === false && !isDraw ? 'AI Won!' : "It's a Draw!"
   const description = isPlayerWin
     ? 'Congratulations! You defeated the AI.'
-    : winner === 'O'
+    : !isDraw
       ? 'The AI outplayed you this time. Want to try again?'
       : 'Great match! No winner this time.'
 
-  const bgColor = isPlayerWin ? 'bg-green-900' : winner === 'O' ? 'bg-red-900' : 'bg-yellow-900'
-  const titleColor = isPlayerWin ? 'text-green-100' : winner === 'O' ? 'text-red-100' : 'text-yellow-100'
-
   return (
-    <AlertDialog open={true}>
-      <AlertDialogContent className="bg-gray-900 border border-gray-700">
-        <AlertDialogTitle className={`text-2xl font-bold ${titleColor}`}>{title}</AlertDialogTitle>
-        <AlertDialogDescription className="text-gray-300 text-base">{description}</AlertDialogDescription>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="bg-gray-900 border border-gray-700">
+        <DialogTitle className="text-2xl font-bold text-white">{title}</DialogTitle>
+        <DialogDescription className="text-gray-300 text-base">{description}</DialogDescription>
         <div className="flex gap-3 pt-4">
-          <AlertDialogAction onClick={onClose} className="bg-blue-600 hover:bg-blue-700 text-white">
+          <Button onClick={onClose} className="w-full bg-blue-600 hover:bg-blue-700 text-white">
             Play Again
-          </AlertDialogAction>
+          </Button>
         </div>
-      </AlertDialogContent>
-    </AlertDialog>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -155,6 +153,7 @@ export default function TicTacToe() {
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [gameStatus, setGameStatus] = useState<string>('in_progress')
   const [winner, setWinner] = useState<string | null>(null)
+  const [showWinnerModal, setShowWinnerModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('Starting new game...')
   const [error, setError] = useState<string | null>(null)
@@ -177,10 +176,15 @@ export default function TicTacToe() {
         })
       })
 
-      const data = (await response.json()) as { response: GameResponse; raw_response: string; status: string }
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`)
+      }
 
-      if (data.status === 'success' && data.response) {
-        const gameData = data.response as GameResponse
+      const data = await response.json()
+      console.log('Move response:', data)
+
+      if (data.success && data.response) {
+        const gameData = typeof data.response === 'string' ? JSON.parse(data.response) : data.response
 
         setGameState(gameData.game_state)
         setGameStatus(gameData.game_status)
@@ -188,12 +192,15 @@ export default function TicTacToe() {
 
         if (gameData.game_status === 'won' || gameData.game_status === 'draw') {
           setWinner(gameData.winner)
+          setShowWinnerModal(true)
         }
       } else {
-        setError('Failed to process move')
+        setError(data.error || 'Failed to process move')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      const errorMsg = err instanceof Error ? err.message : 'An error occurred'
+      setError(errorMsg)
+      console.error('Move error:', err)
     } finally {
       setLoading(false)
     }
@@ -203,6 +210,7 @@ export default function TicTacToe() {
     setLoading(true)
     setError(null)
     setWinner(null)
+    setShowWinnerModal(false)
     setGameStatus('in_progress')
 
     try {
@@ -215,18 +223,25 @@ export default function TicTacToe() {
         })
       })
 
-      const data = (await response.json()) as { response: GameResponse; raw_response: string; status: string }
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`)
+      }
 
-      if (data.status === 'success' && data.response) {
-        const gameData = data.response as GameResponse
+      const data = await response.json()
+      console.log('New game response:', data)
+
+      if (data.success && data.response) {
+        const gameData = typeof data.response === 'string' ? JSON.parse(data.response) : data.response
         setGameState(gameData.game_state)
         setGameStatus(gameData.game_status)
         setMessage(gameData.message)
       } else {
-        setError('Failed to start new game')
+        setError(data.error || 'Failed to start new game')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
+      const errorMsg = err instanceof Error ? err.message : 'An error occurred'
+      setError(errorMsg)
+      console.error('New game error:', err)
     } finally {
       setLoading(false)
     }
@@ -241,7 +256,7 @@ export default function TicTacToe() {
   }
 
   const handlePlayAgain = () => {
-    setWinner(null)
+    setShowWinnerModal(false)
     startNewGame()
   }
 
@@ -285,7 +300,7 @@ export default function TicTacToe() {
         </Card>
       </div>
 
-      {winner && <WinnerModal winner={winner} onClose={handlePlayAgain} />}
+      {winner && <WinnerModal winner={winner} isOpen={showWinnerModal} onClose={handlePlayAgain} />}
     </div>
   )
 }
